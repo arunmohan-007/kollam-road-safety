@@ -103,19 +103,47 @@ map.on('click', e => {
   ])).openOn(map);
 });
 
-function setView(showMap) {
-  el('map-view').hidden = !showMap;
-  el('dash-view').hidden = showMap;
-  el('map-tab').setAttribute('aria-pressed',showMap);
-  el('dash-tab').setAttribute('aria-pressed',!showMap);
-  if (showMap) map.invalidateSize();
+const views = {map: '', dash: '#dashboard', calculation: '#black-spot-calculation'};
+let hasSetDistrictExtent = false;
+
+function fitDistrict() {
+  if (!bounds?.isValid()) return;
+  map.fitBounds(bounds, {padding: [24, 24]});
+  hasSetDistrictExtent = true;
 }
-el('map-tab').onclick = () => setView(true);
-el('dash-tab').onclick = () => setView(false);
-el('fit').onclick = () => { if (bounds?.isValid()) map.fitBounds(bounds,{padding:[24,24]}); };
+
+function setView(view) {
+  for (const name of Object.keys(views)) {
+    const active = name === view;
+    el(name + '-view').hidden = !active;
+    el(name + '-tab').setAttribute('aria-pressed', active);
+  }
+  el('analysis-controls').hidden = view === 'calculation';
+  if (view === 'map') {
+    map.invalidateSize();
+    if (!hasSetDistrictExtent) fitDistrict();
+  }
+}
+
+function viewFromLocation() {
+  setView(Object.keys(views).find(name => views[name] === location.hash) || 'map');
+}
+
+function navigate(view) {
+  const destination = views[view];
+  if (location.hash !== destination) {
+    history.pushState(null, '', location.pathname + location.search + destination);
+  }
+  setView(view);
+}
+
+for (const name of Object.keys(views)) el(name + '-tab').onclick = () => navigate(name);
+window.addEventListener('hashchange', viewFromLocation);
+el('fit').onclick = fitDistrict;
+viewFromLocation();
 
 function openSpot(rank) {
-  setView(true);
+  navigate('map');
   el('spots').checked = true;
   if (!map.hasLayer(spotsLayer)) spotsLayer.addTo(map);
   const layer = spotShapes.get(rank);
@@ -202,7 +230,7 @@ async function initialize() {
   render();
   bounds=roadsLayer.getBounds();
   for (const [id,layer] of toggles) if (el(id).checked) layer.addTo(map);
-  el('fit').click();
+  if (!el('map-view').hidden) fitDistrict();
 }
 initialize().catch(error => {
   el('status').textContent=error.message+'. Reload the page or check the hosting path.';
